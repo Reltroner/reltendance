@@ -2,33 +2,56 @@
 // app/Http/Controllers/AuthController.php
 namespace App\Http\Controllers;
 
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    public function register(Request $request)
+    {
+        $data = $request->validate([
+            'name'         => ['required','string','max:255'],
+            'email'        => ['required','email','unique:users,email'],
+            'password'     => ['required','string','min:8','confirmed'],
+        ]);
+
+        $user = User::create([
+            'name'         => $data['name'],
+            'email'        => $data['email'],
+            'password'     => Hash::make($data['password']),
+        ]);
+
+        $token = $user->createToken('default')->plainTextToken;
+
+        return response()->json([
+            'message' => 'User registered successfully',
+            'user'    => $user,
+            'token'   => $token,
+        ], 201);
+    }
+
     public function login(Request $request)
     {
-        $credentials = $request->validate([
+        $validated = $request->validate([
             'email'       => ['required','email'],
             'password'    => ['required','string'],
             'device_name' => ['required','string'],
         ]);
 
-        if (! Auth::attempt($credentials)) {
+        if (! Auth::attempt($request->only('email','password'))) {
             throw ValidationException::withMessages(['email' => 'Credentials are invalid.']);
         }
 
         $user = $request->user();
 
-        // Revoke token lama dari device yang sama (opsional best-practice)
-        $user->tokens()->where('name', $credentials['device_name'])->delete();
+        // Revoke token lama untuk device yang sama (opsional)
+        $user->tokens()->where('name', $validated['device_name'])->delete();
 
-        // Abilities granular untuk mobile
         $abilities = ['attendance:create', 'attendance:view', 'profile:read'];
-
-        $token = $user->createToken($credentials['device_name'], $abilities)->plainTextToken;
+        $token = $user->createToken($validated['device_name'], $abilities)->plainTextToken;
 
         return response()->json([
             'token' => $token,

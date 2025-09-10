@@ -41,23 +41,22 @@ class RouteServiceProvider extends ServiceProvider
      */
     protected function configureRateLimiting(): void
     {
-        // Rate limit default untuk API (60 request per menit per user/ip)
         RateLimiter::for('api', function (Request $request) {
-            return Limit::perMinute(60)->by(
-                $request->user()?->id ?: $request->ip()
-            );
-        });
+        return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+    });
 
-        // Rate limit khusus untuk login/auth (lebih ketat)
-        RateLimiter::for('auth', function (Request $request) {
-            return Limit::perMinute(10)->by($request->ip());
-        });
+    RateLimiter::for('auth', function (Request $request) {
+        return Limit::perMinute(10)->by($request->ip());
+    });
 
-        // Bisa tambah limiter custom lain, misalnya upload foto
-        RateLimiter::for('upload', function (Request $request) {
-            return Limit::perMinute(20)->by(
-                $request->user()?->id ?: $request->ip()
-            );
-        });
+    // Tambahan untuk permintaan forgot/reset
+    RateLimiter::for('password', function (Request $request) {
+        return Limit::perMinute(5)->by($request->ip());
+    });
+
+    // contoh upload limiter (opsional)
+    RateLimiter::for('upload', function (Request $request) {
+        return Limit::perMinute(20)->by($request->user()?->id ?: $request->ip());
+    });
     }
 }
