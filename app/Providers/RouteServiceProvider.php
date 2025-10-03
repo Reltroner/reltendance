@@ -1,4 +1,5 @@
 <?php
+// app/Providers/RouteServiceProvider.php
 
 namespace App\Providers;
 
@@ -11,21 +12,18 @@ use Illuminate\Support\Facades\Route;
 class RouteServiceProvider extends ServiceProvider
 {
     /**
-     * Path ke "home" route setelah login.
-     *
-     * @var string
+     * Path to the "home" route after login (if you ever use web auth).
+     * For API-only projects, this value is rarely used.
      */
-    public const HOME = '/home';
+    public const HOME = '/';
 
     /**
-     * Daftarkan service provider.
+     * Register routes & rate limiting.
      */
     public function boot(): void
     {
-        // konfigurasi rate limiting
         $this->configureRateLimiting();
 
-        // definisi route
         $this->routes(function () {
             Route::middleware('api')
                 ->prefix('api')
@@ -37,26 +35,43 @@ class RouteServiceProvider extends ServiceProvider
     }
 
     /**
-     * Rate limiter untuk API dan auth.
+     * Centralized rate limiters used by the app.
+     *
+     * Names referenced by middleware: throttle:api, throttle:auth, throttle:password, throttle:upload
      */
     protected function configureRateLimiting(): void
     {
+        // Generic API limiter (per user or per IP)
         RateLimiter::for('api', function (Request $request) {
-        return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
-    });
+            return Limit::perMinute(60)->by(
+                $request->user()?->id ?? $request->ip()
+            );
+        });
 
-    RateLimiter::for('auth', function (Request $request) {
-        return Limit::perMinute(10)->by($request->ip());
-    });
+        // Auth limiter (login, change password while authenticated, etc.)
+        // Keyed by email+IP to protect a single account and reduce global IP lockouts
+        RateLimiter::for('auth', function (Request $request) {
+            $email = strtolower((string) $request->input('email', 'guest'));
+            $key   = $email . '|' . $request->ip();
 
-    // Tambahan untuk permintaan forgot/reset
-    RateLimiter::for('password', function (Request $request) {
-        return Limit::perMinute(5)->by($request->ip());
-    });
+            return Limit::perMinute(10)->by($key);
+            // ->response(fn() => response()->json(['message' => 'Too many attempts.'], 429))
+            // ->decayMinutes(1);
+        });
 
-    // contoh upload limiter (opsional)
-    RateLimiter::for('upload', function (Request $request) {
-        return Limit::perMinute(20)->by($request->user()?->id ?: $request->ip());
-    });
+        // Password endpoints (forgot/reset) – usually stricter
+        RateLimiter::for('password', function (Request $request) {
+            $email = strtolower((string) $request->input('email', 'guest'));
+            $key   = $email . '|' . $request->ip();
+
+            return Limit::perMinute(5)->by($key);
+        });
+
+        // Example upload limiter (optional)
+        RateLimiter::for('upload', function (Request $request) {
+            return Limit::perMinute(20)->by(
+                $request->user()?->id ?? $request->ip()
+            );
+        });
     }
 }

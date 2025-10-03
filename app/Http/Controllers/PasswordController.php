@@ -81,14 +81,23 @@ class PasswordController extends Controller
     {
         $user = $request->user();
 
+        $messages = [
+            'password.confirmed' => 'Passwords do not match', // custom message
+        ];
+
         $data = $request->validate([
             'current_password'      => ['required','string'],
-            'password'              => ['required', 'confirmed', PasswordRule::min(8)
-                                            ->mixedCase()
-                                            ->numbers()
-                                            ->symbols()
-                                            ->uncompromised()],
-        ]);
+            'password'              => [
+                'required',
+                'confirmed',
+                PasswordRule::min(8)
+                    ->mixedCase()
+                    ->numbers()
+                    ->symbols()
+                    ->uncompromised()
+            ],
+            'password_confirmation' => ['required','string'],
+        ], $messages);
 
         if (! Hash::check($data['current_password'], $user->password)) {
             return response()->json(['message' => 'Current password is incorrect.'], 422);
@@ -98,9 +107,10 @@ class PasswordController extends Controller
         $user->setRememberToken(Str::random(60));
         $user->save();
 
-        // Opsional: logout dari semua device (revoke semua token)
+        // Opsional: revoke semua token Sanctum setelah ganti password
         $user->tokens()->delete();
 
         return response()->json(['message' => 'Password changed successfully.'], 200);
     }
+
 }
