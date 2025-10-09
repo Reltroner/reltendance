@@ -1,5 +1,5 @@
 @extends('layouts.app')
-
+{{-- recource/views/pages/attendance/index.blade.php --}}
 @section('content')
 <!-- Content Header (Page header) -->
 <div class="content-header">

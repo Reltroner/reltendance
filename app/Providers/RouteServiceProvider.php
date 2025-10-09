@@ -15,7 +15,7 @@ class RouteServiceProvider extends ServiceProvider
      * Path to the "home" route after login (if you ever use web auth).
      * For API-only projects, this value is rarely used.
      */
-    public const HOME = '/';
+    public const HOME = '/home';
 
     /**
      * Register routes & rate limiting.

@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use App\Providers\RouteServiceProvider;
 
 class AuthController extends Controller
 {
@@ -110,5 +111,51 @@ class AuthController extends Controller
     public function me(Request $request)
     {
         return $request->user();
+    }
+
+    public function loginWeb(Request $request)
+    {
+        $credentials = $request->validate([
+            'email'    => ['required', 'email'],
+            'password' => ['required', 'string'],
+            'remember' => ['nullable', 'boolean'],
+        ], [
+            'email.required' => 'Email is required.',
+            'password.required' => 'Password is required.',
+        ]);
+
+        $remember = (bool) ($credentials['remember'] ?? false);
+
+        if (! Auth::attempt(['email' => $credentials['email'], 'password' => $credentials['password']], $remember)) {
+            throw ValidationException::withMessages([
+                'email' => 'These credentials do not match our records.',
+            ]);
+        }
+
+        // Regenerate session untuk keamanan (session fixation protection)
+        $request->session()->regenerate();
+
+        // Optional: catat last login
+        $user = $request->user();
+        $user->forceFill([
+            'last_login_at' => now(),
+            'last_login_ip' => $request->ip(),
+        ])->save();
+
+        // Redirect ke halaman yang dimaksud atau HOME (/home)
+        return redirect()->intended(RouteServiceProvider::HOME);
+    }
+
+    /**
+     * Web logout (session-based).
+     */
+    public function logoutWeb(Request $request)
+    {
+        Auth::guard('web')->logout();
+
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect()->route('login')->with('status', 'You have been logged out.');
     }
 }

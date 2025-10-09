@@ -1,5 +1,5 @@
 @extends('layouts.app')
-
+{{-- resources/views/home.blade.php --}}
 @section('content')
 <div class="content-header py-3 border-bottom">
     <div class="container-fluid">

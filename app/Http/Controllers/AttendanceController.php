@@ -13,14 +13,132 @@ class AttendanceController extends Controller
 {
     public function history(Request $request)
     {
+        // butuh ability untuk melihat data
         $this->authorizeAbility($request, 'attendance:view');
 
-        $items = Attendance::with('details')
-            ->where('user_id', $request->user()->id)
-            ->latest('date')
-            ->paginate(20);
+        // Validasi query params
+        $v = $request->validate([
+            'from'      => ['nullable', 'date'],                  // format: YYYY-MM-DD
+            'to'        => ['nullable', 'date', 'after_or_equal:from'],
+            'status'    => ['nullable', 'in:present,absent,leave,sick'],
+            'type'      => ['nullable', 'in:check_in,check_out'], // filter detail berdasarkan tipe
+            'sort'      => ['nullable', 'in:date_asc,date_desc'],
+            'per_page'  => ['nullable', 'integer', 'min:1', 'max:100'],
+            'user_id'   => ['nullable', 'integer'],               // hanya admin yang boleh pakai
+            'with'      => ['nullable', 'string'],                // contoh: details,user (comma)
+        ]);
 
-        return $items;
+        // Scope user: default = user login
+        $userId = $request->user()->id;
+
+        // Kalau admin dan punya ability admin, boleh override user_id
+        if (!empty($v['user_id']) && ($request->user()->is_admin || $request->user()->tokenCan('attendance:admin'))) {
+            $userId = (int) $v['user_id'];
+        }
+
+        // Base query
+        $query = Attendance::query()->where('user_id', $userId);
+
+        // Filter tanggal
+        if (!empty($v['from'])) {
+            $query->whereDate('date', '>=', $v['from']);
+        }
+        if (!empty($v['to'])) {
+            $query->whereDate('date', '<=', $v['to']);
+        }
+
+        // Filter status (opsional)
+        if (!empty($v['status'])) {
+            $query->where('status', $v['status']);
+        }
+
+        // Include relations
+        $with = collect(explode(',', $v['with'] ?? 'details'))
+            ->map(fn ($w) => trim($w))
+            ->filter()
+            ->values()
+            ->all();
+
+        // Sorting
+        $sort = $v['sort'] ?? 'date_desc';
+        $direction = $sort === 'date_asc' ? 'asc' : 'desc';
+
+        // Pagination
+        $perPage = (int) ($v['per_page'] ?? 20);
+
+        // Pre-compute summary (tanpa pagination)
+        $summaryBase = (clone $query);
+        $totalRecords = (clone $summaryBase)->count();
+        $presentDays  = (clone $summaryBase)->where('status', 'present')->count();
+        $firstDate    = (clone $summaryBase)->min('date');
+        $lastDate     = (clone $summaryBase)->max('date');
+
+        // Hitung jumlah detail check_in / check_out dalam rentang yang sama
+        // Agar efisien, ambil id attendance yang terlibat
+        $attIds = (clone $summaryBase)->pluck('id');
+
+        $checkinCount  = AttendanceDetail::whereIn('attendance_id', $attIds)
+            ->where('type', 'check_in')->count();
+        $checkoutCount = AttendanceDetail::whereIn('attendance_id', $attIds)
+            ->where('type', 'check_out')->count();
+
+        // Optional filter type di eager load (kalau diminta, supaya data details tidak membengkak)
+        $withRelations = [];
+        if (in_array('details', $with, true)) {
+            $withRelations['details'] = function ($q) use ($v) {
+                if (!empty($v['type'])) {
+                    $q->where('type', $v['type']);
+                }
+                $q->orderBy('created_at', 'asc');
+            };
+        }
+        if (in_array('user', $with, true)) {
+            $withRelations[] = 'user';
+        }
+
+        // Query final + paginate
+        $items = $query
+            ->with($withRelations)
+            ->orderBy('date', $direction)
+            ->paginate($perPage)
+            ->appends($request->query()); // keep query string di pagination links
+
+        // Bentuk response konsisten
+        return response()->json([
+            'data' => $items->items(),
+            'meta' => [
+                'pagination' => [
+                    'current_page' => $items->currentPage(),
+                    'per_page'     => $items->perPage(),
+                    'total'        => $items->total(),
+                    'last_page'    => $items->lastPage(),
+                    'from'         => $items->firstItem(),
+                    'to'           => $items->lastItem(),
+                ],
+                'summary' => [
+                    'total_records'    => $totalRecords,
+                    'present_days'     => $presentDays,
+                    'checkin_count'    => $checkinCount,
+                    'checkout_count'   => $checkoutCount,
+                    'range'            => [
+                        'from' => $v['from'] ?? $firstDate,
+                        'to'   => $v['to']   ?? $lastDate,
+                    ],
+                ],
+                'sort' => $sort,
+                'filters' => [
+                    'status' => $v['status'] ?? null,
+                    'type'   => $v['type']   ?? null,
+                    'user_id'=> ($userId !== $request->user()->id) ? $userId : null,
+                ],
+            ],
+            'links' => [
+                'first' => $items->url(1),
+                'prev'  => $items->previousPageUrl(),
+                'next'  => $items->nextPageUrl(),
+                'last'  => $items->url($items->lastPage()),
+            ],
+        ]);
     }
 
     public function show(Request $request, int $id)
