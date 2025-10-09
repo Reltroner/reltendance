@@ -2,6 +2,8 @@
 // routes/web.php
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\AttendancePageController;
+use App\Http\Controllers\UserPageController;
 
 // Halaman publik
 Route::view('/', 'welcome')->name('welcome');
@@ -18,6 +20,13 @@ Route::middleware('guest')->group(function () {
 Route::middleware('auth')->group(function () {
     // Home dashboard (view: resources/views/home.blade.php)
     Route::get('/home', \App\Http\Controllers\HomeController::class)->name('home');
+
+    // Pages
+    Route::get('/attendance', [AttendancePageController::class, 'index'])
+        ->name('attendance.index'); // -> resources/views/pages/attendance/index.blade.php
+
+    Route::get('/users', [UserPageController::class, 'index'])
+        ->name('users.index'); // -> resources/views/pages/user/index.blade.php
 
     Route::post('/logout', [AuthController::class, 'logoutWeb'])->name('logout');
 });
